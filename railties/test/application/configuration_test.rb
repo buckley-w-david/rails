@@ -2421,6 +2421,32 @@ module ApplicationTests
       assert_equal OpenSSL::Digest::SHA256, ActiveSupport::KeyGenerator.hash_digest_class
     end
 
+    test "ActiveSupport::JsonWithMarshalFallback.fallback_to_marshal_serialization is false by default for new apps" do
+      app "development"
+
+      assert_equal false, ActiveSupport::JsonWithMarshalFallback.fallback_to_marshal_serialization
+    end
+
+    test "ActiveSupport::JsonWithMarshalFallback.fallback_to_marshal_serialization is true by default for upgraded apps" do
+      remove_from_config '.*config\.load_defaults.*\n'
+
+      app "development"
+
+      assert_equal true, ActiveSupport::JsonWithMarshalFallback.fallback_to_marshal_serialization
+    end
+
+    test "ActiveSupport::JsonWithMarshalFallback.fallback_to_marshal_serialization can be configured via config.active_support.fallback_to_marshal_serialization" do
+      remove_from_config '.*config\.load_defaults.*\n'
+
+      app_file "config/initializers/fallback_to_marshal_serialization.rb", <<-RUBY
+        Rails.application.config.active_support.fallback_to_marshal_serialization = false
+      RUBY
+
+      app "development"
+
+      assert_not ActiveSupport::JsonWithMarshalFallback.fallback_to_marshal_serialization
+    end
+
     test "ActiveSupport.test_parallelization_threshold can be configured via config.active_support.test_parallelization_threshold" do
       remove_from_config '.*config\.load_defaults.*\n'
 

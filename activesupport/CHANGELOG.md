@@ -1,3 +1,9 @@
+*   Change default serialization format of `MessageVerifier` from `Marshal` to `JSON`.
+
+    Fallback to Marshal serilization can be disabled with `config.active_support.fallback_to_marshal_serialization = false`. 
+
+    *David Buckley* and *Saba Kiaei*
+
 *   Faster tests by parallelizing only when overhead is justified by the number
     of them.
 

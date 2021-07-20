@@ -19,9 +19,18 @@ class MessageVerifierTest < ActiveSupport::TestCase
 
   def setup
     @verifier = ActiveSupport::MessageVerifier.new("Hey, I'm a secret!")
-    @data = { some: "data", now: Time.utc(2010) }
+    @data = { "some" => "data", "now" => Time.utc(2010) }
+    @data_symboized_keys = { some: "data", now: Time.utc(2010) }
     @secret = SecureRandom.random_bytes(32)
+    @default_message_verifier_json_default_serializer = ActiveSupport::JsonWithMarshalFallback.fallback_to_marshal_serialization
+    ActiveSupport::JsonWithMarshalFallback.fallback_to_marshal_serialization = false
   end
+
+  def teardown
+    ActiveSupport::JsonWithMarshalFallback.fallback_to_marshal_serialization = @default_message_verifier_json_default_serializer
+    super
+  end
+
 
   def test_valid_message
     data, hash = @verifier.generate(@data).split("--")
@@ -70,37 +79,12 @@ class MessageVerifierTest < ActiveSupport::TestCase
     ActiveSupport.parse_json_times, Time.zone = previous
   end
 
-  def test_raise_error_when_argument_class_is_not_loaded
-    # To generate the valid message below:
-    #
-    #   AutoloadClass = Struct.new(:foo)
-    #   valid_message = @verifier.generate(foo: AutoloadClass.new('foo'))
-    #
-    valid_message = "BAh7BjoIZm9vbzonTWVzc2FnZVZlcmlmaWVyVGVzdDo6QXV0b2xvYWRDbGFzcwY6CUBmb29JIghmb28GOgZFVA==--f3ef39a5241c365083770566dc7a9eb5d6ace914"
-    exception = assert_raise(ArgumentError, NameError) do
-      @verifier.verified(valid_message)
-    end
-    assert_includes ["uninitialized constant MessageVerifierTest::AutoloadClass",
-                    "undefined class/module MessageVerifierTest::AutoloadClass"], exception.message
-    exception = assert_raise(ArgumentError, NameError) do
-      @verifier.verify(valid_message)
-    end
-    assert_includes ["uninitialized constant MessageVerifierTest::AutoloadClass",
-                    "undefined class/module MessageVerifierTest::AutoloadClass"], exception.message
-  end
-
   def test_raise_error_when_secret_is_nil
     exception = assert_raise(ArgumentError) do
       ActiveSupport::MessageVerifier.new(nil)
     end
     assert_equal "Secret should not be nil.", exception.message
   end
-
-  def test_backward_compatibility_messages_signed_without_metadata
-    signed_message = "BAh7BzoJc29tZUkiCWRhdGEGOgZFVDoIbm93SXU6CVRpbWUNIIAbgAAAAAAHOgtvZmZzZXRpADoJem9uZUkiCFVUQwY7BkY=--d03c52c91dfe4ccc5159417c660461bcce005e96"
-    assert_equal @data, @verifier.verify(signed_message)
-  end
-
 
   def test_rotating_secret
     old_message = ActiveSupport::MessageVerifier.new("old", digest: "SHA1").generate("old")
@@ -124,6 +108,33 @@ class MessageVerifierTest < ActiveSupport::TestCase
     assert_equal "older", verifier.verified(older_message)
   end
 
+  def test_rotations_with_metadata
+    old_message = ActiveSupport::MessageVerifier.new("old").generate("old", purpose: :rotation)
+
+    verifier = ActiveSupport::MessageVerifier.new(@secret)
+    verifier.rotate "old"
+
+    assert_equal "old", verifier.verified(old_message, purpose: :rotation)
+  end
+end
+
+class DefaultMarshalSerializerMessageVerifierTest < MessageVerifierTest
+  def setup
+    super
+    @default_message_verifier_json_default_serializer = ActiveSupport::JsonWithMarshalFallback.fallback_to_marshal_serialization
+    ActiveSupport::JsonWithMarshalFallback.fallback_to_marshal_serialization = true
+  end
+
+  def teardown
+    ActiveSupport::JsonWithMarshalFallback.fallback_to_marshal_serialization = @default_message_verifier_json_default_serializer
+    super
+  end
+
+  def test_backward_compatibility_messages_signed_without_metadata
+    signed_message = "BAh7BzoJc29tZUkiCWRhdGEGOgZFVDoIbm93SXU6CVRpbWUNIIAbgAAAAAAHOgtvZmZzZXRpADoJem9uZUkiCFVUQwY7BkY=--d03c52c91dfe4ccc5159417c660461bcce005e96"
+    assert_equal @data_symboized_keys, @verifier.verify(signed_message)
+  end
+
   def test_on_rotation_is_called_and_verified_returns_message
     older_message = ActiveSupport::MessageVerifier.new("older", digest: "SHA1").generate({ encoded: "message" })
 
@@ -134,18 +145,29 @@ class MessageVerifierTest < ActiveSupport::TestCase
     rotated = false
     message = verifier.verified(older_message, on_rotation: proc { rotated = true })
 
-    assert_equal({ encoded: "message" }, message)
+    assert_equal({ "encoded" => "message" }, message)
     assert rotated
   end
 
-  def test_rotations_with_metadata
-    old_message = ActiveSupport::MessageVerifier.new("old").generate("old", purpose: :rotation)
-
-    verifier = ActiveSupport::MessageVerifier.new(@secret)
-    verifier.rotate "old"
-
-    assert_equal "old", verifier.verified(old_message, purpose: :rotation)
+  def test_raise_error_when_argument_class_is_not_loaded
+    # To generate the valid message below:
+    #
+    #   AutoloadClass = Struct.new(:foo)
+    #   valid_message = @verifier.generate(foo: AutoloadClass.new('foo'))
+    #
+    valid_message = "BAh7BjoIZm9vbzonTWVzc2FnZVZlcmlmaWVyVGVzdDo6QXV0b2xvYWRDbGFzcwY6CUBmb29JIghmb28GOgZFVA==--f3ef39a5241c365083770566dc7a9eb5d6ace914"
+    exception = assert_raise(ArgumentError, NameError) do
+      @verifier.verified(valid_message)
+    end
+    assert_includes ["uninitialized constant MessageVerifierTest::AutoloadClass",
+                    "undefined class/module MessageVerifierTest::AutoloadClass"], exception.message
+    exception = assert_raise(ArgumentError, NameError) do
+      @verifier.verify(valid_message)
+    end
+    assert_includes ["uninitialized constant MessageVerifierTest::AutoloadClass",
+                    "undefined class/module MessageVerifierTest::AutoloadClass"], exception.message
   end
+
 end
 
 class MessageVerifierMetadataTest < ActiveSupport::TestCase
@@ -199,10 +221,17 @@ class MessageVerifierMetadataMarshalTest < MessageVerifierMetadataTest
     end
 end
 
-class MessageVerifierMetadataJSONTest < MessageVerifierMetadataTest
+class MessageVerifierMetadataJsonWithMarshalFallbackTest < MessageVerifierMetadataTest
   private
     def verifier_options
-      { serializer: MessageVerifierTest::JSONSerializer.new }
+      { serializer: ActiveSupport::JsonWithMarshalFallback}
+    end
+end
+
+class MessageVerifierMetadataCustomJSONTest < MessageVerifierMetadataTest
+  private
+    def verifier_options
+      { serializer: MessageVerifierTest::JSONSerializer.new}
     end
 end
 
